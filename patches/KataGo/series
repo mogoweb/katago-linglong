@@ -1,0 +1,2 @@
+0001-Only-pass-mfpmath-sse-on-x86.patch
+0002-Normalize-NHWC-and-FP16-test-args-for-the-Eigen-back.patch

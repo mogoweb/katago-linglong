@@ -1,0 +1,77 @@
+From 4ac49bb3126c8856c52e8a86ff4be1cc464592c5 Mon Sep 17 00:00:00 2001
+From: chenzhengyong <chenzhengyong@uniontech.com>
+Date: Mon, 14 Sep 2026 21:12:30 +0800
+Subject: [PATCH 2/2] Normalize NHWC and FP16 test args for the Eigen backend
+
+The Eigen backend only implements the NHWC float32 path and hard-errors on
+NCHW (eigenbackend.cpp:2425) and on FP16 (eigenbackend.cpp:2663). Nothing
+compensated for that: TestCommon::overrideForBackends only knew about OpenCL
+and TensorRT, and testsearchmisc.cpp never called it at all. So every NN test
+invoked with NCHW or FP16 args - which is how runsearchtestslimited.sh and
+runsearchtests.sh invoke them - aborted with SIGABRT instead of running.
+
+Clamp in the two startNNEval helpers instead of extending overrideForBackends:
+they are the single choke point all NN tests go through, which also covers
+testsearchmisc.cpp's runNNSymmetriesTest and runNNBatchingTest. Guarded by
+USE_EIGEN_BACKEND, so other backends are unaffected.
+---
+ cpp/tests/testsearchcommon.cpp  | 18 ++++++++++++++++++
+ cpp/tests/testtrainingwrite.cpp | 13 +++++++++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/cpp/tests/testsearchcommon.cpp b/cpp/tests/testsearchcommon.cpp
+index 6cd69364..87d8bdc8 100644
+--- a/cpp/tests/testsearchcommon.cpp
++++ b/cpp/tests/testsearchcommon.cpp
+@@ -203,6 +203,24 @@ NNEvaluator* TestSearchCommon::startNNEval(
+   const string& modelName = modelFile;
+   const string homeDataDirOverride = "";
+   ConfigParser cfg;
++#if defined(USE_EIGEN_BACKEND)
++  //The Eigen backend only implements the NHWC float32 path and hard-errors on anything else
++  //(see eigenbackend.cpp), but the tests and the runsearchtests*.sh scripts are written for the
++  //GPU backends and pass NCHW and/or FP16. Normalize here, at the one choke point every NN test
++  //goes through, rather than fixing up each call site.
++  if(!inputsUseNHWC) {
++    std::cout << "Backend is Eigen, ignoring args and forcing inputsUseNHWC=true" << std::endl;
++    inputsUseNHWC = true;
++  }
++  if(!useNHWC) {
++    std::cout << "Backend is Eigen, ignoring args and forcing useNHWC=true" << std::endl;
++    useNHWC = true;
++  }
++  if(useFP16) {
++    std::cout << "Backend is Eigen, ignoring args and forcing useFP16=false" << std::endl;
++    useFP16 = false;
++  }
++#endif
+   //NHWC layout is no longer a generic NNEvaluator option; only the CUDA backend reads it (off cfg).
+   //Route the test's useNHWC param into a cudaUseNHWC override so it still drives the CUDA layout.
+   cfg.overrideKey("cudaUseNHWC", useNHWC ? "true" : "false");
+diff --git a/cpp/tests/testtrainingwrite.cpp b/cpp/tests/testtrainingwrite.cpp
+index 80d12d87..3a979f85 100644
+--- a/cpp/tests/testtrainingwrite.cpp
++++ b/cpp/tests/testtrainingwrite.cpp
+@@ -24,6 +24,19 @@ static NNEvaluator* startNNEval(
+   bool debugSkipNeuralNet = modelFile == "/dev/null";
+   const string homeDataDirOverride = "";
+   ConfigParser cfg;
++#if defined(USE_EIGEN_BACKEND)
++  //The Eigen backend only implements the NHWC float32 path and hard-errors on NCHW
++  //(see eigenbackend.cpp). These tests default to useNHWC=false, which the GPU backends accept
++  //but Eigen does not, so normalize here at the one choke point they all go through.
++  if(!inputsUseNHWC) {
++    cout << "Backend is Eigen, ignoring args and forcing inputsUseNHWC=true" << endl;
++    inputsUseNHWC = true;
++  }
++  if(!useNHWC) {
++    cout << "Backend is Eigen, ignoring args and forcing useNHWC=true" << endl;
++    useNHWC = true;
++  }
++#endif
+   //NHWC layout is no longer a generic NNEvaluator option; only the CUDA backend reads it (off cfg).
+   //Route the test's useNHWC param into a cudaUseNHWC override so it still drives the CUDA layout.
+   cfg.overrideKey("cudaUseNHWC", useNHWC ? "true" : "false");
+-- 
+2.50.1
+

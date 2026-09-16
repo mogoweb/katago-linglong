@@ -1,0 +1,10 @@
+# ll-builder working dir, regenerated on every build (~2G)
+/linglong/
+
+# exported linglong package
+*.uab
+
+# pip wheel cache: kivy/ffpyplayer have no loongarch64 wheels and are built
+# from source, so this dir caches the result (~33M). Regenerate with the
+# build script if missing.
+/wheels/
