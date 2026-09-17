@@ -1,0 +1,52 @@
+name: Build Linglong Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 官方 action 引用的 xUbuntu_24.04 源已 404，这里用现存的 Ubuntu_24.04 flat 源
+      - name: Install linglong-builder
+        run: |
+          echo "deb [trusted=yes] https://ppa.linyaps.org.cn/release/Ubuntu_24.04/ ./" | sudo tee /etc/apt/sources.list.d/linglong.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends linglong-builder linglong-box
+
+      - name: Cache linglong builder
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/linglong-builder
+          key: linglong-builder-${{ hashFiles('linglong.yaml') }}
+          restore-keys: |
+            linglong-builder-
+
+      - name: Build
+        run: |
+          ll-builder --version
+          ll-builder build
+
+      - name: Export UAB
+        run: ll-builder export
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uab
+          path: ./*.uab
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./*.uab
+          generate_release_notes: true
