@@ -26,10 +26,10 @@ jobs:
       # 0.0.4.0，UAB 导出必失败；dev 通道有完整可用的 0.0.4.0
       - name: Switch repo to dev channel
         run: |
-          ll-builder repo list
+          ll-builder repo show
           ll-builder repo add dev https://mirror-repo-linglong.deepin.com
           ll-builder repo set-default dev
-          ll-builder repo list
+          ll-builder repo show
 
       - name: Cache linglong builder
         uses: actions/cache@v4
