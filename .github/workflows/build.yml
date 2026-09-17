@@ -22,13 +22,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends linglong-builder linglong-box
 
+      # stable 通道的 x86_64 builder-utils (0.0.2.0) 不完整且低于 1.14.0 要求的
+      # 0.0.4.0，UAB 导出必失败；dev 通道有完整可用的 0.0.4.0
+      - name: Switch repo to dev channel
+        run: |
+          ll-builder repo list
+          ll-builder repo add dev https://mirror-repo-linglong.deepin.com
+          ll-builder repo set-default dev
+          ll-builder repo list
+
       - name: Cache linglong builder
         uses: actions/cache@v4
         with:
           path: ~/.cache/linglong-builder
-          key: linglong-builder-${{ hashFiles('linglong.yaml') }}
+          key: linglong-builder-v2-${{ hashFiles('linglong.yaml') }}
           restore-keys: |
-            linglong-builder-
+            linglong-builder-v2-
 
       - name: Build
         run: |
