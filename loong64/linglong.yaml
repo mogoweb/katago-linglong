@@ -1,0 +1,152 @@
+version: "1"
+package:
+  id: com.github.sanderland.katrain
+  name: KaTrain
+  version: 1.20.0.0
+  kind: app
+  description: |
+    KaTrain is a Go/Baduk/Weiqi playing and teaching app with a variety of AIs.
+    KataGo 1.18.2 is fetched from GitHub, patched and built (Eigen CPU backend) in
+    the same build, then shipped inside the package as the analysis engine.
+
+command:
+  - /opt/apps/com.github.sanderland.katrain/files/bin/katrain
+
+base: org.deepin.base/25.2.2
+
+sources:
+  - kind: git
+    url: https://github.com/lightvector/KataGo.git
+    version: v1.18.2
+    commit: fd0723fdbc0e9d82cf269c9630af8c27c57c07c4
+  - kind: git
+    url: https://github.com/sanderland/katrain.git
+    version: v1.20.0
+    commit: f4981cf905cece90085ce4e3967415d0c16d525f
+
+buildext:
+  apt:
+    build_depends:
+      # KataGo: C++ / CMake, Eigen CPU backend
+      - cmake
+      - g++
+      - make
+      - patch
+      - libeigen3-dev
+      - zlib1g-dev
+      # KaTrain: Python / Kivy. No loongarch64 wheels exist for kivy or
+      # ffpyplayer, so they are compiled from source against these dev packages.
+      - python3
+      - python3-pip
+      - python3-dev
+      - build-essential
+      - pkg-config
+      - libsdl2-dev
+      - libsdl2-image-dev
+      - libsdl2-mixer-dev
+      - libsdl2-ttf-dev
+      - libfreetype6-dev
+      - libmtdev-dev
+      - libpng-dev
+      - libjpeg-dev
+      - libgl1-mesa-dev
+      - libglu1-mesa-dev
+      - libgles-dev
+      - libegl1-mesa-dev
+      - libavcodec-dev
+      - libavformat-dev
+      - libavfilter-dev
+      - libavdevice-dev
+      - libpostproc-dev
+      - libswscale-dev
+      - libswresample-dev
+      - libavutil-dev
+      - python3-pil
+    depends:
+      - python3
+      - libsdl2-2.0-0
+      - libsdl2-image-2.0-0
+      - libsdl2-mixer-2.0-0
+      - libsdl2-ttf-2.0-0
+      - libmtdev1
+
+build: |
+  set -e
+
+  PYVER=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+  SITE="$PREFIX/lib/python$PYVER/site-packages"
+  APPLIB="$PREFIX/lib/katrain"
+  KATAGO_SRC=/project/linglong/sources/KataGo.git
+  KATRAIN_SRC=/project/linglong/sources/katrain.git
+  PATCHDIR=/project/patches/KataGo
+
+  # --------------------------------------------------------------- KataGo ----
+  # Patches have to land before compiling. 0001 keeps -mfpmath=sse off non-x86
+  # ISAs (loongarch64 hard-errors on it), 0002 normalises Eigen-only NN test args.
+  # Build out of tree, in a scratch dir that is wiped first: a stale
+  # CMakeCache.txt points cmake back at whatever source dir it was configured
+  # with and aborts the build.
+  rm -rf /tmp/katago-src /tmp/katago-build
+  cp -r "$KATAGO_SRC" /tmp/katago-src
+  cd /tmp/katago-src
+  # `|| [ -n "$p" ]` matters: the series file has no trailing newline, so a plain
+  # `read` drops its last line.
+  while IFS= read -r p || [ -n "$p" ]; do
+    [ -z "$p" ] && continue
+    echo "applying patch: $p"
+    patch -p1 --forward < "$PATCHDIR/$p"
+  done < "$PATCHDIR/series"
+
+  mkdir -p /tmp/katago-build
+  cd /tmp/katago-build
+  cmake /tmp/katago-src/cpp \
+    -DUSE_BACKEND=EIGEN \
+    -DNO_GIT_REVISION=1 \
+    -DCMAKE_BUILD_TYPE=Release
+  make -j$(nproc)
+
+  # -------------------------------------------------------------- KaTrain ----
+  # kivy and ffpyplayer have no loongarch64 wheels, so pip would build them from
+  # source on every run; wheels/ in the project dir caches the result (kivy alone
+  # costs ~15 min). Falls back to building them if the cache is absent.
+  WHEELHOUSE=/project/wheels
+  PKGS="kivy>=2.3.1 ffpyplayer>=4.5.1 screeninfo>=0.8.1,<0.9 chardet>=5.2.0,<6 docutils>=0.21.2 urllib3>=2.2.2 websocket-client>=1.9.0 certifi pysgf>=1.0.0,<2"
+  if [ -d "$WHEELHOUSE" ] && ls "$WHEELHOUSE"/Kivy-*.whl "$WHEELHOUSE"/ffpyplayer-*.whl >/dev/null 2>&1; then
+    python3 -m pip install --target "$SITE" --upgrade --break-system-packages --no-index --find-links "$WHEELHOUSE" $PKGS
+  else
+    WHEELHOUSE=/tmp/wheels
+    mkdir -p "$WHEELHOUSE"
+    python3 -m pip wheel --wheel-dir "$WHEELHOUSE" --no-cache-dir $PKGS
+    python3 -m pip install --target "$SITE" --upgrade --break-system-packages --no-index --find-links "$WHEELHOUSE" $PKGS
+  fi
+
+  rm -rf "$APPLIB"
+  mkdir -p "$APPLIB"
+  cp -r "$KATRAIN_SRC"/katrain/. "$APPLIB/"
+
+  # drop the Windows-only engine payload shipped upstream, then install the
+  # KataGo binary built above
+  rm -f "$APPLIB"/KataGo/*.dll "$APPLIB"/KataGo/katago.exe "$APPLIB"/KataGo/OpenCL.dll "$APPLIB"/KataGo/bz2.dll
+  install -m 0755 /tmp/katago-build/katago "$APPLIB/KataGo/katago"
+
+  mkdir -p "$PREFIX/bin"
+  cat > "$PREFIX/bin/katrain" <<EOF
+  #!/bin/bash
+  # $APPLIB is the katrain package dir, so its parent belongs on PYTHONPATH
+  export PYTHONPATH="$SITE:$PREFIX/lib:\${PYTHONPATH}"
+  exec python3 -m katrain "\$@"
+  EOF
+  chmod 0755 "$PREFIX/bin/katrain"
+
+  mkdir -p "$PREFIX/share/icons/hicolor/256x256/apps" "$PREFIX/share/applications"
+  python3 -c "from PIL import Image; Image.open('$KATRAIN_SRC/katrain/img/icon.ico').save('$PREFIX/share/icons/hicolor/256x256/apps/com.github.sanderland.katrain.png')" || true
+  cat > "$PREFIX/share/applications/com.github.sanderland.katrain.desktop" <<EOF
+  [Desktop Entry]
+  Type=Application
+  Name=KaTrain
+  Comment=Go/Baduk/Weiqi playing and teaching app with a variety of AIs
+  Exec=/opt/apps/com.github.sanderland.katrain/files/bin/katrain
+  Icon=com.github.sanderland.katrain
+  Terminal=false
+  Categories=Game;BoardGame;
+  EOF
