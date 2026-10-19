@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # arm64 leg must run on a native arm64 runner, otherwise the UAB would be
+    # an x86_64 package despite the arm64 config
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
