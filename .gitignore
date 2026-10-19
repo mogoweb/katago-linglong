@@ -4,7 +4,7 @@
 # exported linglong package
 *.uab
 
-# pip wheel cache: kivy/ffpyplayer have no loongarch64 wheels and are built
+# pip wheel cache: loongarch64 has no kivy/ffpyplayer wheels and they are built
 # from source, so this dir caches the result (~33M). Regenerate with the
 # build script if missing.
 /wheels/

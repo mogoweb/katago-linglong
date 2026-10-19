@@ -12,6 +12,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
 
@@ -31,21 +35,22 @@ jobs:
       #    ll-builder repo set-default dev
       #    ll-builder repo show
 
-      - name: Build
+      - name: Build (${{ matrix.arch }})
         run: |
           ll-builder --version
-          ll-builder build
+          ll-builder build -f ${{ matrix.arch }}/linglong.yaml
 
-      - name: Export UAB
-        run: ll-builder export
+      - name: Export UAB (${{ matrix.arch }})
+        run: |
+          ll-builder export -f ${{ matrix.arch }}/linglong.yaml
 
-      - name: Upload artifact
+      - name: Upload artifact (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
         with:
-          name: uab
+          name: uab-${{ matrix.arch }}
           path: ./*.uab
 
-      - name: Release
+      - name: Release (${{ matrix.arch }})
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:

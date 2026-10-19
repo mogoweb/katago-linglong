@@ -31,7 +31,6 @@ buildext:
       - cmake
       - g++
       - make
-      - patch
       - libeigen3-dev
       - zlib1g-dev
       - libzip-dev
@@ -56,16 +55,25 @@ build: |
   KATAGO_SRC=/project/linglong/sources/KataGo.git
   KATRAIN_SRC=/project/linglong/sources/katrain.git
 
-  mkdir -p "$KATAGO_SRC"/cpp/build
-  cd "$KATAGO_SRC"/cpp/build
-  cmake $KATAGO_SRC/cpp \
+  # --------------------------------------------------------------- KataGo ----
+  # Build out of tree, in a scratch dir that is wiped first: a stale
+  # CMakeCache.txt points cmake back at whatever source dir it was configured
+  # with and aborts the build.
+  rm -rf /tmp/katago-src /tmp/katago-build
+  cp -r "$KATAGO_SRC" /tmp/katago-src
+  mkdir -p /tmp/katago-build
+  cd /tmp/katago-build
+  cmake /tmp/katago-src/cpp \
     -DUSE_BACKEND=EIGEN \
     -DNO_GIT_REVISION=1 \
     -DCMAKE_BUILD_TYPE=Release
   make -j$(nproc)
 
+  # -------------------------------------------------------------- KaTrain ----
+  # amd64 has binary wheels for every dependency on PyPI, so a plain pip
+  # install is enough - no wheel cache or source builds needed.
   cd $KATRAIN_SRC
-  
+
   python3 -m venv $KATRAIN_SRC/.venv
   source $KATRAIN_SRC/.venv/bin/activate
   pip install uv
@@ -87,13 +95,13 @@ build: |
   # drop the Windows-only engine payload shipped upstream, then install the
   # KataGo binary built above
   rm -f "$APPLIB"/KataGo/*.dll "$APPLIB"/KataGo/katago.exe "$APPLIB"/KataGo/OpenCL.dll "$APPLIB"/KataGo/bz2.dll
-  install -m 0755 $KATAGO_SRC/cpp/build/katago "$APPLIB/KataGo/katago"
+  install -m 0755 /tmp/katago-build/katago "$APPLIB/KataGo/katago"
 
   mkdir -p "$PREFIX/bin"
   cat > "$PREFIX/bin/katrain" <<EOF
   #!/bin/bash
-  # $PREFIX/lib is the parent of the katrain package dir; site-packages holds the bundled deps
-  export PYTHONPATH="$PREFIX/lib/katrain/site-packages:$PREFIX/lib:\${PYTHONPATH}"
+  # $APPLIB is the katrain package dir, so its parent belongs on PYTHONPATH
+  export PYTHONPATH="$SITE:$PREFIX/lib:\${PYTHONPATH}"
   exec python3 -m katrain "\$@"
   EOF
   chmod 0755 "$PREFIX/bin/katrain"
