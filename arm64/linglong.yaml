@@ -31,7 +31,6 @@ buildext:
       - cmake
       - g++
       - make
-      - patch
       - libeigen3-dev
       - zlib1g-dev
       - libzip-dev
@@ -55,25 +54,13 @@ build: |
   APPLIB="$PREFIX/lib/katrain"
   KATAGO_SRC=/project/linglong/sources/KataGo.git
   KATRAIN_SRC=/project/linglong/sources/katrain.git
-  PATCHDIR=/project/patches/KataGo
 
   # --------------------------------------------------------------- KataGo ----
-  # Patches have to land before compiling. 0001 keeps -mfpmath=sse off non-x86
-  # ISAs (a no-op on arm64), 0002 normalises Eigen-only NN test args.
   # Build out of tree, in a scratch dir that is wiped first: a stale
   # CMakeCache.txt points cmake back at whatever source dir it was configured
   # with and aborts the build.
   rm -rf /tmp/katago-src /tmp/katago-build
   cp -r "$KATAGO_SRC" /tmp/katago-src
-  cd /tmp/katago-src
-  # `|| [ -n "$p" ]` matters: the series file has no trailing newline, so a plain
-  # `read` drops its last line.
-  while IFS= read -r p || [ -n "$p" ]; do
-    [ -z "$p" ] && continue
-    echo "applying patch: $p"
-    patch -p1 --forward < "$PATCHDIR/$p"
-  done < "$PATCHDIR/series"
-
   mkdir -p /tmp/katago-build
   cd /tmp/katago-build
   cmake /tmp/katago-src/cpp \
